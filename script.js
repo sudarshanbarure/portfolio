@@ -1,17 +1,14 @@
 /* ═══════════════════════════════════════════
-   PORTFOLIO SCRIPT — Sudarshan Barure
-   • Navbar scroll / mobile menu
-   • Scroll-reveal animations
-   • Contact form → Google Sheets + EmailJS
+   PORTFOLIO SCRIPT — FIXED VERSION
+   • Navbar
+   • Scroll animations
+   • Contact form → Google Sheets (WORKING)
 ═══════════════════════════════════════════ */
 
-// ─── CONFIGURATION ─────────────────────────
-// Replace these values after following CONTACT_SETUP.md
+// ─── CONFIG ────────────────────────────────
 const CONFIG = {
-  // Google Apps Script Web App URL (from Step 2 in CONTACT_SETUP.md)
   GOOGLE_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbzhfEt19hFn__2WfZuzOU_oNgHt8zm6ulbItKoxYx6g5l2s6WskPKCBXAnHUlBxAa2W/exec",
 
-  // EmailJS — from https://www.emailjs.com
   EMAILJS_SERVICE_ID:  "YOUR_SERVICE_ID",
   EMAILJS_TEMPLATE_ID: "YOUR_TEMPLATE_ID",
   EMAILJS_PUBLIC_KEY:  "YOUR_PUBLIC_KEY",
@@ -60,116 +57,106 @@ const submitBtn = document.getElementById("submitBtn");
 const btnText   = submitBtn.querySelector(".btn-text");
 const btnLoad   = submitBtn.querySelector(".btn-loading");
 const formMsg   = document.getElementById("formMsg");
-const setupNote = document.getElementById("setupNote");
 
-// Hide setup note if keys are configured
-if (
-  CONFIG.GOOGLE_SCRIPT_URL !== "https://script.google.com/macros/s/AKfycbzhfEt19hFn__2WfZuzOU_oNgHt8zm6ulbItKoxYx6g5l2s6WskPKCBXAnHUlBxAa2W/exec" &&
-  CONFIG.EMAILJS_PUBLIC_KEY  !== "YOUR_PUBLIC_KEY"
-) {
-  setupNote && setupNote.remove();
-}
-
+// Message UI
 function showMsg(type, text) {
   formMsg.className = `form-msg ${type}`;
   formMsg.textContent = text;
   formMsg.classList.remove("hidden");
-  setTimeout(() => formMsg.classList.add("hidden"), 6000);
+  setTimeout(() => formMsg.classList.add("hidden"), 5000);
 }
 
+// Button loader
 function setLoading(loading) {
   submitBtn.disabled = loading;
   btnText.classList.toggle("hidden", loading);
   btnLoad.classList.toggle("hidden", !loading);
 }
 
-// Load EmailJS SDK lazily
-function loadEmailJS() {
-  return new Promise((resolve) => {
-    if (window.emailjs) { resolve(); return; }
+// ─── SEND TO GOOGLE SHEETS (FIXED) ─────────
+async function sendToGoogleSheets(data) {
+  const formData = new FormData();
+  formData.append("name", data.name);
+  formData.append("phone", data.phone);
+  formData.append("email", data.email);
+  formData.append("query", data.query);
+  formData.append("timestamp", new Date().toISOString());
+
+  const res = await fetch(CONFIG.GOOGLE_SCRIPT_URL, {
+    method: "POST",
+    body: formData,
+  });
+
+  return res;
+}
+
+// ─── EMAILJS (OPTIONAL SAFE MODE) ──────────
+async function sendEmailJS(data) {
+  if (CONFIG.EMAILJS_PUBLIC_KEY === "YOUR_PUBLIC_KEY") return;
+
+  if (!window.emailjs) {
     const s = document.createElement("script");
     s.src = "https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js";
-    s.onload = () => {
-      emailjs.init({ publicKey: CONFIG.EMAILJS_PUBLIC_KEY });
-      resolve();
-    };
     document.head.appendChild(s);
-  });
-}
 
-// Send data to Google Sheets via Apps Script
-async function sendToGoogleSheets(data) {
-  const res = await fetch(CONFIG.GOOGLE_SCRIPT_URL, {
-    method:  "POST",
-    headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify({ ...data, timestamp: new Date().toISOString() }),
-    mode:    "no-cors", // Apps Script requires no-cors
-  });
-  return res; // no-cors returns opaque response — we assume success
-}
+    await new Promise(resolve => s.onload = resolve);
+    emailjs.init({ publicKey: CONFIG.EMAILJS_PUBLIC_KEY });
+  }
 
-// Send email via EmailJS
-async function sendEmailJS(data) {
-  await loadEmailJS();
   return emailjs.send(
     CONFIG.EMAILJS_SERVICE_ID,
     CONFIG.EMAILJS_TEMPLATE_ID,
     {
-      from_name:    data.name,
-      from_email:   data.email,
-      from_phone:   data.phone,
-      message:      data.query,
-      to_name:      "Sudarshan Barure",
-      reply_to:     data.email,
-      submitted_at: new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
+      from_name: data.name,
+      from_email: data.email,
+      from_phone: data.phone,
+      message: data.query,
     }
   );
 }
 
+// ─── FORM SUBMIT ───────────────────────────
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
 
-  // Basic validation
   const name  = form.name.value.trim();
   const phone = form.phone.value.trim();
   const email = form.email.value.trim();
   const query = form.query.value.trim();
 
+  // Validation
   if (!name || !phone || !email || !query) {
-    showMsg("error", "Please fill in all required fields.");
-    return;
-  }
-  if (!/^[\w.+-]+@[\w-]+\.[a-z]{2,}$/i.test(email)) {
-    showMsg("error", "Please enter a valid email address.");
+    showMsg("error", "Please fill all required fields.");
     return;
   }
 
-  // Check keys are configured
-  if (
-    CONFIG.GOOGLE_SCRIPT_URL === "YOUR_GOOGLE_APPS_SCRIPT_URL_HERE" ||
-    CONFIG.EMAILJS_PUBLIC_KEY  === "YOUR_PUBLIC_KEY"
-  ) {
-    showMsg("error", "Contact form not yet configured. Please see CONTACT_SETUP.md.");
+  if (!/^[\w.+-]+@[\w-]+\.[a-z]{2,}$/i.test(email)) {
+    showMsg("error", "Invalid email address.");
     return;
   }
 
   setLoading(true);
+
   const data = { name, phone, email, query };
 
   try {
-    // Fire both in parallel
-    await Promise.all([
-      sendToGoogleSheets(data),
-      sendEmailJS(data),
-    ]);
+    // ✅ Save to Google Sheets
+    await sendToGoogleSheets(data);
 
-    showMsg("success", "✅ Message sent! I'll get back to you within 24 hours.");
+    // ✅ Try Email (non-blocking)
+    try {
+      await sendEmailJS(data);
+    } catch (e) {
+      console.warn("Email failed:", e);
+    }
+
+    showMsg("success", "✅ Message sent successfully!");
     form.reset();
+
   } catch (err) {
-    console.error("Form error:", err);
-    // If Sheets wrote but email failed (or vice-versa), still show partial success
-    showMsg("error", "Something went wrong. Please email me directly at ajaybarure@gmail.com");
-  } finally {
-    setLoading(false);
+    console.error(err);
+    showMsg("error", "❌ Failed to send message. Try again.");
   }
+
+  setLoading(false);
 });
